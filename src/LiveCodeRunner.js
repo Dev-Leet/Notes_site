@@ -1,263 +1,382 @@
-import React, { useState, useEffect } from "react";
-import Prism from "prismjs";
-import "prismjs/themes/prism.css";
+import React, { useState, useRef, useEffect } from "react";
 
-export default function LiveCodeRunner({ code }) {
-    const [src, setSrc] = useState(code || "");
-    const [output, setOutput] = useState("");
-    const [isLoadingRuntime, setIsLoadingRuntime] = useState(false);
-    const [isRunning, setIsRunning] = useState(false);
-    const [php, setPhp] = useState(null); // php-wasm instance
-    const [error, setError] = useState(null);
-    const [timedOut, setTimedOut] = useState(false);
-    const abortRef = React.useRef(false);
-    const iframeRef = React.useRef(null);
+export default function LiveCodeRunner({
+  code = "<?php\n// Example\n$greeting = \"Hello, world!\";\necho \"<h1>$greeting</h1>\";\n?>",
+  timeoutMs = 8000, // client-side timeout
+  workerCdn = "/php-wasm/php-worker.mjs" // UMD bundle expected
+}) {
+  const [src, setSrc] = useState(code);
+  const [output, setOutput] = useState("");
+  const [isHtmlOutput, setIsHtmlOutput] = useState(false);
+  const [status, setStatus] = useState("idle"); // idle | loading | running | stopped | timeout | error
+  const [lastError, setLastError] = useState(null);
+  const iframeRef = useRef(null);
+  const workerRef = useRef(null);
+  const runIdRef = useRef(0);
+  const textareaRef = useRef(null);
 
-    // Syntax highlight when source changes (your App already imports Prism)
-    useEffect(() => {
-      try {
-        Prism.highlightAll();
-      } catch (e) {
-        // ignore highlight errors
-        // console.warn("Prism highlight failed", e);
+  // Build worker script as a Blob URL
+  const workerBlobUrlRef = useRef(null);
+  useEffect(() => {
+    // Create the absolute URL in the main thread where window.location is available.
+    const absoluteUrl = new URL(workerCdn, window.location.origin).href;
+
+    const WORKER_SCRIPT = `
+    let phpRuntime = null;
+
+    // HIGHLIGHT START: Added debug message posting function
+    function postDbg(msg) {
+        // This sends a 'debug' message back to the main thread.
+        self.postMessage({ type: 'debug', msg: '[php-worker-debug] ' + msg });
+    }
+    // HIGHLIGHT END
+
+    // This function now expects a full, absolute URL.
+    async function createRuntime(absoluteWorkerUrl) {
+      if (phpRuntime) {
+        postDbg('Runtime already initialized.');
+        return phpRuntime;
       }
-    }, [src, isLoadingRuntime]);
-
-    // Lazy-load php-wasm when requested
-    const loadRuntime = async () => {
-      if (php || isLoadingRuntime) return;
-      setIsLoadingRuntime(true);
-      setError(null);
-      try {
-        // Dynamic import so the package only downloads when needed
-        const mod = await import("php-wasm");
-        // module shape differs between builds — try common names
-        const createPHP =
-          (mod && (mod.default || mod.createPHP || mod.createPhp || mod.createPhpRuntime)) ||
-          mod;
-        if (typeof createPHP !== "function") {
-          throw new Error("php-wasm: unexpected module shape — check package exports");
+      
+      const TRIES = [absoluteWorkerUrl, absoluteWorkerUrl.replace('.mjs', '.js')];
+      for(const url of TRIES){
+        try {
+            postDbg('Attempting to import runtime from: ' + url);
+            const { createPHP } = await import(url);
+            if (createPHP) {
+                postDbg('createPHP function found. Initializing runtime...');
+                phpRuntime = await createPHP();
+                postDbg('PHP runtime initialized successfully.');
+                return phpRuntime;
+            }
+        } catch(e) {
+            postDbg('Failed to import ' + url + ': ' + (e.message || e));
         }
-        // create the runtime (options vary by package; this is the common pattern)
-        const phpInstance = await createPHP();
-        setPhp(phpInstance);
-      } catch (e) {
-        console.error("Failed to load php-wasm:", e);
-        setError(
-          "Failed to load php-wasm runtime. Make sure `php-wasm` is installed (npm i php-wasm)."
-        );
-      } finally {
-        setIsLoadingRuntime(false);
+      }
+      throw new Error('Could not load php-wasm runtime from ' + TRIES.join(' or '));
+    }
+
+    self.onmessage = async (ev) => {
+        const msg = ev.data || {};
+        const { type, id, code } = msg;
+
+        if (type === 'run') {
+            try {
+                // Pass the absolute URL to the create function.
+                const php = await createRuntime("${absoluteUrl}");
+                postDbg('Executing PHP code...');
+                const result = await php.run(code);
+                postDbg('Execution finished.');
+                let normalized = '';
+                if (result.stdout || result.stderr) {
+                    normalized = (result.stdout || '') + (result.stderr ? '\\n' + result.stderr : '');
+                } else {
+                    normalized = String(result);
+                }
+                self.postMessage({ type: 'result', id, result: normalized });
+            } catch (err) {
+                postDbg('An error occurred: ' + (err.message || err));
+                self.postMessage({ type: 'error', id, error: err.message });
+            }
+        }
+    };
+    `;
+    const blob = new Blob([WORKER_SCRIPT], { type: "application/javascript" });
+    const url = URL.createObjectURL(blob);
+    workerBlobUrlRef.current = url;
+    return () => {
+      if (workerBlobUrlRef.current) {
+        URL.revokeObjectURL(workerBlobUrlRef.current);
+        workerBlobUrlRef.current = null;
       }
     };
+  }, [workerCdn]);
 
-    // Utility: decide if output looks like HTML (simple heuristic)
-    const looksLikeHTML = (text) => {
-      if (!text || typeof text !== "string") return false;
-      return /<\/?[a-z][\s\S]*>/i.test(text);
-    };
+  // Auto-resize textarea height to fit content
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+    }
+  }, [src]);
 
-    // Escape plain text for <pre>
-    const escapeHtml = (s) =>
-      (s || "")
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
 
-    // Run php code with a best-effort timeout
-    const runCode = async (opts = { timeoutMs: 6000 }) => {
-      setError(null);
-      setTimedOut(false);
-      abortRef.current = false;
-      setOutput("");
-      setIsRunning(true);
-
-      // Load runtime if needed
-      if (!php) {
-        await loadRuntime();
-      }
-      if (!php) {
-        setIsRunning(false);
+  // Helper: create a fresh worker instance (per-run) and run code, with client-side timeout and stop control
+  const runWithWorker = (codeToRun, opts = {}) => {
+    return new Promise((resolve, reject) => {
+      if (!workerBlobUrlRef.current) {
+        reject(new Error("Worker blob not initialized"));
         return;
       }
+      const worker = new Worker(workerBlobUrlRef.current);
+      workerRef.current = worker;
+      const id = ++runIdRef.current;
+      let finished = false;
 
-      // Normalize code: if user typed only HTML, wrap? We'll just send the src as-is.
-      const codeToRun = src;
-
-      // Promise that runs the PHP code
-      const runPromise = (async () => {
+      const cleanup = () => {
         try {
-          // Most php-wasm variants provide a `.run` or `.execute` method — try common names:
-          const runner = php.run || php.execute || php.exec;
-          if (typeof runner !== "function") {
-            // some builds expose execString or similar — attempt a few fallbacks
-            if (typeof php.runString === "function") {
-              return await php.runString(codeToRun);
-            }
-            throw new Error("php-wasm runtime does not expose a run() function.");
-          }
-          // run the code — some runtimes return stdout string, some an object
-          const result = await runner.call(php, codeToRun);
-          // Normalize result to string
-          if (result == null) return "";
-          if (typeof result === "string") return result;
-          // result may be an object { stdout, stderr }
-          if (typeof result === "object") {
-            if (result.stdout || result.stderr) {
-              // combine stdout + stderr (stdout first)
-              return `${result.stdout || ""}${result.stderr ? ("\n" + result.stderr) : ""}`.trim();
-            }
-            // fallback stringify
-            return String(result);
-          }
-          return String(result);
-        } catch (err) {
-          // propagate
-          throw err;
-        }
-      })();
+          worker.terminate();
+        } catch (e) {}
+        if (workerRef.current === worker) workerRef.current = null;
+      };
 
-      // Timeout wrapper
-      const timeoutMs = opts.timeoutMs || 6000;
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => {
-          reject(new Error(`Execution timed out after ${timeoutMs} ms`));
-        }, timeoutMs)
-      );
+      worker.onmessage = (ev) => {
+        const msg = ev.data || {};
+        if (msg.id && msg.id !== id && msg.type !== 'debug') return;
+
+        // HIGHLIGHT START: Added handler for 'debug' messages
+        if (msg.type === 'debug') {
+            console.debug(msg.msg);
+            return;
+        }
+        // HIGHLIGHT END
+        
+        if (msg.type === "result") {
+          finished = true;
+          cleanup();
+          resolve({ result: String(msg.result || "") });
+        } else if (msg.type === "error") {
+          finished = true;
+          cleanup();
+          reject(new Error(String(msg.error || "Unknown error from worker")));
+        } else if (msg.type === "stopped") {
+          finished = true;
+          cleanup();
+          reject(new Error("Execution stopped"));
+        }
+      };
+
+      worker.onerror = (err) => {
+        finished = true;
+        cleanup();
+        reject(new Error(err.message || "Worker runtime error"));
+      };
+
+      const clientTimeout = typeof opts.timeoutMs === "number" ? opts.timeoutMs : timeoutMs;
+      const t = setTimeout(() => {
+        if (!finished) {
+          finished = true;
+          try { worker.terminate(); } catch (e) {}
+          if (workerRef.current === worker) workerRef.current = null;
+          reject(new Error("Client-side timeout after " + clientTimeout + " ms"));
+        }
+      }, clientTimeout);
 
       try {
-        const res = await Promise.race([runPromise, timeoutPromise]);
-        if (abortRef.current) {
-          setOutput("[Execution stopped by user]");
-        } else {
-          setOutput(res == null ? "" : String(res));
-        }
-      } catch (err) {
-        if (err && /timed out/i.test(err.message || "")) {
-          setTimedOut(true);
-          setOutput("[Execution timed out]");
-        } else if (abortRef.current) {
-          setOutput("[Execution stopped by user]");
-        } else {
-          console.error("Runtime error:", err);
-          setError(String(err.message || err));
-          setOutput("[Execution error — see console]");
-        }
-      } finally {
-        setIsRunning(false);
-      }
-    };
-
-    const stopExecution = () => {
-      // We cannot robustly kill a wasm thread from the main thread in all runtimes.
-      // Best-effort: set a flag and ignore the result; if runtime provides a cancel API, call it.
-      abortRef.current = true;
-      setIsRunning(false);
-      setOutput("[Stopping execution — result may still arrive if runtime cannot be aborted]");
-      // If runtime provides cancellation method, call it:
-      try {
-        if (php && typeof php.kill === "function") php.kill();
-        if (php && typeof php.terminate === "function") php.terminate();
+        worker.postMessage({ type: "run", id, code: codeToRun, timeoutMs: clientTimeout });
       } catch (e) {
-        // ignore
+        clearTimeout(t);
+        cleanup();
+        reject(e);
       }
-    };
+    });
+  };
 
-    // Render the output either in an iframe (if HTML) or as preformatted text
-    const renderOutput = () => {
-      if (!output && !error) return null;
-      if (error) {
-        return <div className="text-red-600">{error}</div>;
-      }
-      if (looksLikeHTML(output)) {
-        // Use sandboxed iframe to render HTML safely
-        return (
-          <div className="mt-2 border rounded">
-            <iframe
-              ref={iframeRef}
-              title="PHP Output"
-              sandbox="allow-scripts"
-              srcDoc={output}
-              style={{ width: "100%", minHeight: 150, border: 0 }}
-            />
-          </div>
-        );
-      }
-      // plain text -> show pre with escaped HTML
-      return (
-        <pre className="mt-2 p-3 bg-gray-100 border rounded text-sm whitespace-pre-wrap overflow-auto">
-          {escapeHtml(output)}
-        </pre>
-      );
-    };
+  // Run handler
+  const runCode = async () => {
+    setLastError(null);
+    setIsHtmlOutput(false);
+    setOutput("");
+    setStatus("loading");
+    try {
+      setStatus("running");
+      const res = await runWithWorker(src, { timeoutMs });
+      const result = res.result || "";
+      const looksLikeHtml = /<\/?[a-z][\s\S]*>/i.test(result);
 
-    return (
-      <div className="mt-4 border rounded-md p-3 bg-gray-50">
-        <pre className="line-numbers language-php rounded-md text-sm bg-gray-900 text-gray-100 p-3 overflow-hidden">
-          <code
-            className="language-php"
-            contentEditable
-            suppressContentEditableWarning
-            onInput={(e) => setSrc(e.currentTarget.textContent || "")}
-            // keep the initially provided src inside the editable code
-            dangerouslySetInnerHTML={{ __html: escapeHtml(src) }}
+      setIsHtmlOutput(looksLikeHtml);
+      setOutput(result);
+
+      if (looksLikeHtml && iframeRef.current) {
+        try {
+          const doc = iframeRef.current.contentDocument;
+          doc.open();
+          doc.write(result);
+          doc.close();
+        } catch (e) {}
+      }
+      setStatus("idle");
+    } catch (err) {
+      setStatus(err.message && err.message.toLowerCase().includes("timeout") ? "timeout" : "error");
+      setLastError(err.message ? String(err.message) : String(err));
+      setOutput("[Error] " + (err.message || String(err)));
+    }
+  };
+
+  // Stop handler: terminate running worker if any
+  const stopExecution = () => {
+    if (workerRef.current) {
+      try {
+        workerRef.current.terminate();
+      } catch (e) {}
+      workerRef.current = null;
+      setStatus("stopped");
+      setOutput("[Execution stopped]");
+    }
+  };
+
+  const resetCode = () => {
+    setSrc(code);
+    setOutput("");
+    setStatus("idle");
+    setLastError(null);
+  };
+
+  const lineCount = src ? src.split("\n").length : 1;
+  const lineNumbers = Array.from({ length: lineCount }, (_, i) => i + 1).join("\n");
+
+  return (
+    <div style={{ fontFamily: 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial', marginTop: 12 }}>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{
+          background: "#f1f3f5",
+          color: "#495057" ,
+          padding: '8px 6px',
+          borderRadius: 6,
+          overflow: 'hidden',
+          width: '5ch',
+          textAlign: 'right',
+          lineHeight: '1.45',
+          whiteSpace: 'pre',
+          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", "Courier New", monospace',
+          fontSize: 12,
+          userSelect: 'none'
+        }}>
+          {lineNumbers}
+        </div>
+        <textarea
+          value={src}
+          onChange={(e) => setSrc(e.target.value)}
+          spellCheck={false}
+          style={{
+            flex: 1,
+            minHeight: 160,
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, "Roboto Mono", "Courier New", monospace',
+            fontSize: 13,
+            padding: 8,
+            borderRadius: 6,
+            border: '1px solid #e5e7eb',
+            background: "#f8f9fa",
+            color: "#212529",
+            lineHeight: '1.45',
+            resize: "none",
+            overflow: "hidden",
+            fontWeight: 'bold',
+          }}
+        />
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+        <button
+          onClick={runCode}
+          disabled={status === "running" || status === "loading"}
+          style={{
+            padding: "8px 12px",
+            borderRadius: 6,
+            border: "none",
+            background: "#2563eb",
+            color: "white",
+            cursor: "pointer",
+          }}
+        >
+          {status === "loading"
+            ? "Loading…"
+            : status === "running"
+            ? "Running…"
+            : "Run PHP"}
+        </button>
+
+        <button
+          onClick={stopExecution}
+          disabled={!workerRef.current}
+          style={{
+            padding: "8px 12px",
+            borderRadius: 6,
+            border: "1px solid #e5e7eb",
+            background: "white",
+            cursor: "pointer",
+          }}
+        >
+          Stop
+        </button>
+
+        <button
+          onClick={() => {
+            setOutput("");
+            setLastError(null);
+          }}
+          style={{
+            padding: "8px 12px",
+            borderRadius: 6,
+            border: "1px solid #e5e7eb",
+            background: "white",
+            cursor: "pointer",
+          }}
+        >
+          Clear Output
+        </button>
+
+        <button
+          onClick={resetCode}
+          style={{
+            padding: "8px 12px",
+            borderRadius: 6,
+            border: "1px solid #e5e7eb",
+            background: "white",
+            cursor: "pointer",
+            marginLeft: "auto",
+          }}
+        >
+          Reset Code
+        </button>
+      </div>
+
+      <div style={{ marginTop: 12 }}>
+        <div style={{ fontSize: 13, color: "#374151" }}>
+          Status: <strong>{status}</strong>{" "}
+          {lastError ? (
+            <span style={{ color: "#dc2626" }}> — {String(lastError)}</span>
+          ) : null}
+        </div>
+      </div>
+
+      <div
+        style={{
+          marginTop: 12,
+          background: "white",
+          border: "1px solid #e5e7eb",
+          borderRadius: 6,
+          padding: 10,
+          minHeight: 80,
+        }}
+      >
+        <div style={{ fontWeight: 600, marginBottom: 6 }}>Output</div>
+        {isHtmlOutput ? (
+          <iframe
+            ref={iframeRef}
+            title="php-preview"
+            sandbox="allow-scripts"
+            style={{
+              width: "100%",
+              minHeight: 180,
+              border: "1px solid #e5e7eb",
+              borderRadius: 6,
+            }}
+            srcDoc={output}
           />
-        </pre>
-
-        <div className="flex items-center gap-2 mt-2">
-          <button
-            onClick={() => runCode({ timeoutMs: 8000 })}
-            disabled={isLoadingRuntime || isRunning}
-            className="px-3 py-1 bg-blue-600 text-white rounded-md text-sm"
-          >
-            {isLoadingRuntime ? "Loading runtime..." : isRunning ? "Running..." : "Run PHP"}
-          </button>
-
-          <button
-            onClick={() => {
-              setSrc(code || "");
-              setOutput("");
-              setError(null);
+        ) : (
+          <pre
+            style={{
+              whiteSpace: "pre-wrap",
+              fontFamily: "ui-monospace, monospace",
+              fontSize: 13,
             }}
-            className="px-3 py-1 border rounded-md text-sm"
           >
-            Reset
-          </button>
-
-          <button
-            onClick={() => {
-              setOutput("");
-              setError(null);
-              setTimedOut(false);
-            }}
-            className="px-3 py-1 border rounded-md text-sm"
-          >
-            Clear
-          </button>
-
-          <button
-            onClick={stopExecution}
-            disabled={!isRunning}
-            className="px-3 py-1 border rounded-md text-sm text-red-600"
-          >
-            Stop
-          </button>
-
-          <div className="ml-auto text-xs text-gray-500">
-            {php ? "php-wasm: ready" : isLoadingRuntime ? "php-wasm: loading" : "php-wasm: not loaded"}
-          </div>
-        </div>
-
-        <div className="mt-2 p-2 bg-white border rounded-md text-sm min-h-[40px]">
-          <strong>Output:</strong>
-          <div className="mt-1">{renderOutput()}</div>
-        </div>
-
-        {timedOut && (
-          <div className="mt-2 text-sm text-orange-600">
-            Execution timed out. Try increasing the timeout or simplifying the script.
-          </div>
+            {output}
+          </pre>
         )}
       </div>
-    );
-  }
+    </div>
+  );
+
+}
