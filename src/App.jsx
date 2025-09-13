@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useEffect } from "react";
-import Prism from "prismjs";
+import React, { useState, useMemo } from "react";
+import LiveCodeRunner from "./LiveCodeRunner";
 import "prismjs/themes/prism.css";
 import "prismjs/plugins/line-numbers/prism-line-numbers.css";
 import "prismjs/plugins/line-numbers/prism-line-numbers";
@@ -8,56 +8,6 @@ export default function PHPNotesSite() {
   const [query, setQuery] = useState("");
   const [active, setActive] = useState("Intro");
   const [sidebarOpen, setSidebarOpen] = useState(true);
-
-  function LiveCodeRunner({ code }) {
-    const [src, setSrc] = useState(code);
-    const [output, setOutput] = useState("");
-
-    const runCode = () => {
-      if (src.includes("echo")) {
-        let simulated = src
-          .replace(/<\?php/g, "")
-          .replace(/\?>/g, "")
-          .replace(/echo/g, "")
-          .replace(/;/g, "")
-          .trim();
-        setOutput(simulated);
-      } else {
-        setOutput("[Simulation only: PHP execution not available here]");
-      }
-    };
-
-    useEffect(() => {
-      Prism.highlightAll();
-    }, [src]);
-
-    return (
-      <div className="mt-4 border rounded-md p-3 bg-gray-50">
-        <pre className="line-numbers language-php rounded-md text-sm bg-gray-900 text-gray-100 p-3 overflow-hidden">
-          <code
-            className="language-php"
-            contentEditable
-            suppressContentEditableWarning
-            onInput={(e) => setSrc(e.currentTarget.textContent || "")}
-          >
-            {src}
-          </code>
-        </pre>
-        <div className="flex gap-2 mt-2">
-          <button onClick={runCode} className="px-3 py-1 bg-blue-600 text-white rounded-md text-sm">
-            Run PHP
-          </button>
-          <button onClick={() => setOutput("")} className="px-3 py-1 border rounded-md text-sm">
-            Clear
-          </button>
-        </div>
-        <div className="mt-2 p-2 bg-white border rounded-md text-sm min-h-[40px]">
-          <strong>Output:</strong>
-          <div className="mt-1 whitespace-pre-wrap">{output}</div>
-        </div>
-      </div>
-    );
-  }
 
   const sections = useMemo(
     () => [
