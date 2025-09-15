@@ -443,39 +443,195 @@ echo $cars[0]; // Volvo
       ),
     },
     {
-      id: "Superglobals",
-      title: "Superglobals",
-      summary: "Built-in arrays always available: $_GET, $_POST, $_SERVER, etc.",
-      content: (
-        <>
-          <p>
-            PHP defines several built-in superglobal arrays that are always
-            accessible, regardless of scope. Key superglobals include:
-          </p>
-          <ul className="list-disc ml-6">
-            <li>
-              <code>$GLOBALS</code> – References all global variables.
-            </li>
-            <li>
-              <code>$_SERVER</code> – Server and execution environment info.
-            </li>
-            <li>
-              <code>$_REQUEST</code> – Data from GET, POST, COOKIE (not
-              recommended for new code).
-            </li>
-            <li>
-              <code>$_POST</code>, <code>$_GET</code>, <code>$_FILES</code>,{" "}
-              <code>$_COOKIE</code>, <code>$_SESSION</code>, <code>$_ENV</code>.
-            </li>
-          </ul>
-
-          <LiveCodeRunner
-            code={`<?php
-echo $_SERVER['HTTP_USER_AGENT'];
-?>`}
-          />
-        </>
-      ),
+      id: 'php-arrays',
+      title: 'PHP ARRAYS',
+      summary: 'Overview of PHP arrays: types, creation, access, loops, and modification with examples.',
+      content: (<>
+        <h3 className="text-xl font-semibold mt-6 mb-2">What is an Array?</h3>
+        <p className="mb-4">An array in PHP is technically an ordered map. A map is a data type that associates values with keys. Think of it like a dictionary where each word (the key) has a corresponding definition (the value). This structure allows you to group related items together under a single variable name.</p>
+        <ul className="list-disc ml-6 mt-2 space-y-1">
+          <li><strong>Value</strong>: Can be of any data type (string, integer, float, boolean, another array, or an object). This flexibility is one of the powerful features of PHP arrays.</li>
+          <li><strong>Key</strong>: Can be an integer (for indexed arrays) or a string (for associative arrays). The key is the unique identifier used to access its corresponding value.</li>
+        </ul>
+        <h3 className="text-xl font-semibold mt-6 mb-2">Component Table</h3>
+        <table className="table-auto border-collapse border border-gray-400 mt-3 w-full">
+          <thead className="bg-gray-200">
+            <tr>
+              <th className="border border-gray-400 px-2 py-1">Component</th>
+              <th className="border border-gray-400 px-2 py-1">Description</th>
+              <th className="border border-gray-400 px-2 py-1">Example</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td className="border px-2 py-1">Key</td>
+              <td className="border px-2 py-1">The identifier for a value in the array.</td>
+              <td className="border px-2 py-1">0, 1, "name"</td>
+            </tr>
+            <tr>
+              <td className="border px-2 py-1">Value</td>
+              <td className="border px-2 py-1">The data stored and associated with a key.</td>
+              <td className="border px-2 py-1">"Apple", 25, "John Doe"</td>
+            </tr>
+            <tr>
+              <td className="border px-2 py-1">Pair</td>
+              <td className="border px-2 py-1">The combination of a key and its associated value.</td>
+              <td className="border px-2 py-1">"name" =&gt; "John Doe"</td>
+            </tr>
+          </tbody>
+        </table>
+        <h3 className="text-xl font-semibold mt-6 mb-2">Types of PHP Arrays</h3>
+        <p className="mb-4">There are three main types of arrays in PHP, each suited for different use cases.</p>
+        <h4 className="mt-4 font-semibold">Indexed Arrays</h4>
+        <ul className="list-disc ml-6 mt-2 space-y-1">
+          <li>Arrays with numeric keys. The keys are automatically assigned and typically start from 0, incrementing by one for each new element.</li>
+          <li>Ideal for creating simple, ordered lists.</li>
+        </ul>
+        <h4 className="mt-4 font-semibold">Associative Arrays</h4>
+        <ul className="list-disc ml-6 mt-2 space-y-1">
+          <li>Arrays that use named, string-based keys that you define.</li>
+          <li>Allow for more descriptive and readable code — perfect for storing data records like a user's profile.</li>
+        </ul>
+        <h4 className="mt-4 font-semibold">Multidimensional Arrays</h4>
+        <ul className="list-disc ml-6 mt-2 space-y-1">
+          <li>Arrays where one or more of the values are also arrays.</li>
+          <li>Useful for complex structures such as tables (rows and columns) or trees.</li>
+        </ul>
+        <h3 className="text-xl font-semibold mt-6 mb-2">Summary of Array Types</h3>
+        <table className="table-auto border-collapse border border-gray-400 mt-3 w-full">
+          <thead className="bg-gray-200">
+            <tr>
+              <th className="border border-gray-400 px-2 py-1">Array Type</th>
+              <th className="border border-gray-400 px-2 py-1">Key Type</th>
+              <th className="border border-gray-400 px-2 py-1">When to Use</th>
+              <th className="border border-gray-400 px-2 py-1">Example Syntax</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td className="border px-2 py-1">Indexed</td>
+              <td className="border px-2 py-1">Integer (usually 0,1,2)</td>
+              <td className="border px-2 py-1">For creating ordered lists of items.</td>
+              <td className="border px-2 py-1"><code>$fruits = ["Apple", "Banana"];</code></td>
+            </tr>
+            <tr>
+              <td className="border px-2 py-1">Associative</td>
+              <td className="border px-2 py-1">String</td>
+              <td className="border px-2 py-1">For storing key-value pairs with meaningful keys.</td>
+              <td className="border px-2 py-1"><code>$user = ["name" = "John"];</code></td>
+            </tr>
+            <tr>
+              <td className="border px-2 py-1">Multidimensional</td>
+              <td className="border px-2 py-1">Integer or String</td>
+              <td className="border px-2 py-1">For creating complex, nested data structures.</td>
+              <td className="border px-2 py-1"><code>$matrix = [[1,2],[3,4]];</code></td>
+            </tr>
+          </tbody>
+        </table>
+        <h3 className="text-xl font-semibold mt-6 mb-2">Creating Arrays</h3>
+        <p className="mb-4">You can create arrays using the traditional <code>array()</code> construct or the modern short array syntax <code>[]</code> (available since PHP 5.4).</p>
+        <h4 className="mt-4 font-semibold">Indexed Arrays</h4>
+        <p className="mb-4">The keys are automatically generated starting from 0.</p>
+        <div className="mt-4">
+          <h5 className="font-medium">Using array() and [] for indexed arrays</h5>
+          <LiveCodeRunner code={`$cars = array("Volvo", "BMW", "Toyota");\n// Using modern short array syntax [] (preferred)\n$fruits = ["Apple", "Banana", "Orange"];\n// Create an empty array and add items one by one\n$colors = []; // Create empty array\n$colors[0] = "Red";\n$colors[1] = "Green";\n$colors[2] = "Blue";`} />
+        </div>
+        <h4 className="mt-4 font-semibold">Associative Arrays</h4>
+        <p className="mb-4">You must explicitly define the string key for each value.</p>
+        <div className="mt-4">
+          <h5 className="font-medium">Using array() and [] for associative arrays</h5>
+          <LiveCodeRunner code={`$age = array("Peter"=>35, "Ben"=>37, "Joe"=>43);\n// Using modern short array syntax [] (preferred)\n$user = [\n    "name" => "John Doe",\n    "email" => "john.doe@example.com",\n    "age" => 28\n];`} />
+        </div>
+        <h4 className="mt-4 font-semibold">Multidimensional Arrays</h4>
+        <p className="mb-4">Arrays where each element is another array. You can mix indexed and associative arrays.</p>
+        <div className="mt-4">
+          <h5 className="font-medium">Indexed and associative multidimensional array examples</h5>
+          <LiveCodeRunner code={`$students = [\n    ["John Doe", "john.doe@example.com", 22],\n    ["Jane Smith", "jane.smith@example.com", 24],\n    ["Peter Jones", "peter.jones@example.com", 21]\n];\n$users = [\n    "user1" => ["name" => "John", "status" => "active"],\n    "user2" => ["name" => "Jane", "status" => "inactive"],\n];`} />
+        </div>
+        <h3 className="text-xl font-semibold mt-6 mb-2">Accessing Array Elements</h3>
+        <p className="mb-4">You access an array element using its key inside square brackets <code>[]</code>. If you try to access a key that does not exist, PHP will generate a notice-level error.</p>
+        <h4 className="mt-4 font-semibold">Accessing Indexed Arrays</h4>
+        <div className="mt-4">
+          <h5 className="font-medium">Accessing indexed arrays by numeric index</h5>
+          <LiveCodeRunner code={`$fruits = ["Apple", "Banana", "Orange"];\necho $fruits[0]; // Outputs: Apple\necho $fruits[2]; // Outputs: Orange`} />
+        </div>
+        <h4 className="mt-4 font-semibold">Accessing Associative Arrays</h4>
+        <div className="mt-4">
+          <h5 className="font-medium">Accessing associative arrays by named key</h5>
+          <LiveCodeRunner code={`$user = [\n    "name" => "John Doe",\n    "email" => "john.doe@example.com",\n];\necho $user["name"]; // Outputs: John Doe`} />
+        </div>
+        <h4 className="mt-4 font-semibold">Accessing Multidimensional Arrays</h4>
+        <div className="mt-4">
+          <h5 className="font-medium">Accessing nested array elements</h5>
+          <LiveCodeRunner code={`$users = [\n    "user1" => ["name" => "John", "status" => "active"],\n    "user2" => ["name" => "Jane", "status" => "inactive"],\n];\n// Accessing Jane's status\necho $users["user2"]["status"]; // Outputs: inactive`} />
+        </div>
+        <div className="mt-4">
+          <h5 className="font-medium">Safely accessing array elements with isset()</h5>
+          <LiveCodeRunner code={`if (isset($user['age'])) {\n    echo $user['age'];\n} else {\n    echo "Age is not set.";\n}`} />
+        </div>
+        <h3 className="text-xl font-semibold mt-6 mb-2">Looping Through Arrays</h3>
+        <p className="mb-4">Loops are essential for processing each element in an array.</p>
+        <h4 className="mt-4 font-semibold">foreach Loop (Recommended)</h4>
+        <p className="mb-4">The foreach loop is designed specifically for arrays and is the easiest and most reliable method for iteration.</p>
+        <div className="mt-4">
+          <h5 className="font-medium">Looping through an indexed array with foreach</h5>
+          <LiveCodeRunner code={`$fruits = ["Apple", "Banana", "Orange"];\nforeach ($fruits as $fruit) {\n    echo $fruit . "<br>";\n}`} />
+        </div>
+        <div className="mt-4">
+          <h5 className="font-medium">Looping through associative arrays (key and value)</h5>
+          <LiveCodeRunner code={`$user = ["name" => "John Doe", "email" => "john.doe@example.com"];\nforeach ($user as $key => $value) {\n    echo "User's $key is $value <br>";\n}`} />
+        </div>
+        <h4 className="mt-4 font-semibold">for Loop</h4>
+        <p className="mb-4">A for loop can also be used, but it's generally only suitable for sequentially indexed arrays.</p>
+        <div className="mt-4">
+          <h5 className="font-medium">Looping with a for counter</h5>
+          <LiveCodeRunner code={`$colors = ["Red", "Green", "Blue"];\n$arrayLength = count($colors);\nfor ($i = 0; $i < $arrayLength; $i++) {\n    echo $colors[$i] . "<br>";\n}`} />
+        </div>
+        <h3 className="text-xl font-semibold mt-6 mb-2">Loop Comparison</h3>
+        <table className="table-auto border-collapse border border-gray-400 mt-3 w-full">
+          <thead className="bg-gray-200">
+            <tr>
+              <th className="border border-gray-400 px-2 py-1">Loop Type</th>
+              <th className="border border-gray-400 px-2 py-1">Best For</th>
+              <th className="border border-gray-400 px-2 py-1">Pros</th>
+              <th className="border border-gray-400 px-2 py-1">Cons</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td className="border px-2 py-1">foreach</td>
+              <td className="border px-2 py-1">All array types (indexed, associative).</td>
+              <td className="border px-2 py-1">Simple syntax, no manual counter, handles any keys.</td>
+              <td className="border px-2 py-1">Slightly less control over iteration steps (e.g., skipping).</td>
+            </tr>
+            <tr>
+              <td className="border px-2 py-1">for</td>
+              <td className="border px-2 py-1">Sequentially indexed arrays (0,1,2...).</td>
+              <td className="border px-2 py-1">Full control over the counter ($i).</td>
+              <td className="border px-2 py-1">More complex, requires count(), fails on non-sequential or string keys.</td>
+            </tr>
+          </tbody>
+        </table>
+        <h3 className="text-xl font-semibold mt-6 mb-2">Modifying Array Elements</h3>
+        <p className="mb-4">You can add, update, and remove elements from an array after it has been created.</p>
+        <h4 className="mt-4 font-semibold">Adding Elements</h4>
+        <div className="mt-4">
+          <h5 className="font-medium">Adding elements to arrays</h5>
+          <LiveCodeRunner code={`$fruits = ["Apple", "Banana"];\n// Add an item to the end of an indexed array. PHP automatically assigns the next integer key.\n$fruits[] = "Orange"; // $fruits is now ["Apple", "Banana", "Orange"]\n// Add an item to an associative array with a specific key\n$user = ["name" => "John Doe"];\n$user["age"] = 30; // $user is now ["name" => "John Doe", "age" => 30]`} />
+        </div>
+        <h4 className="mt-4 font-semibold">Changing Elements</h4>
+        <p className="mb-4">You can change an element by accessing it via its key and assigning a new value. This overwrites the existing value.</p>
+        <div className="mt-4">
+          <h5 className="font-medium">Changing elements by key</h5>
+          <LiveCodeRunner code={`$fruits = ["Apple", "Banana", "Orange"];\n$fruits[1] = "Mango"; // Changes "Banana" to "Mango"\n$user = ["name" => "John Doe"];\n$user["name"] = "Jane Doe"; // Changes the value associated with the "name" key`} />
+        </div>
+        <h4 className="mt-4 font-semibold">Removing Elements</h4>
+        <p className="mb-4">Use the unset() language construct to remove an element from an array. This removes both the key and the value.</p>
+        <div className="mt-4">
+          <h5 className="font-medium">Removing elements with unset()</h5>
+          <LiveCodeRunner code={`$colors = ["Red", "Green", "Blue", "Yellow"];\nunset($colors[1]); // Removes "Green"\n// The array is now [0 => "Red", 2 => "Blue", 3 => "Yellow"]. The key '1' is gone.\n$user = ["name" => "John Doe", "age" => 30];\nunset($user["age"]); // Removes the age key-value pair`} />
+        </div>
+      </>),
     },
     {
       id: "Regex",
